@@ -591,7 +591,10 @@ async def stream_chat(req: ChatRequest, auth=Depends(check_auth)):
 }
 ```
 
-+  Execute 执行，正常返回大模型回答内容：
++ Execute 执行，正常返回大模型回答内容：
+
+<!-- 这是一张图片，ocr 内容为： -->
+![](https://cdn.nlark.com/yuque/0/2026/png/526089/1784645506228-193cf8f4-82aa-4121-878f-fca40e6d9191.png)
 
 #### 任务小结：
 + 复用工具层 + 鉴权 + 异常三大已有能力，仅新增一个生成器方法 + 一个路由，充分体现分层架构的可扩展性
