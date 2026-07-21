@@ -451,6 +451,7 @@ INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
 <!-- 这是一张图片，ocr 内容为： -->
 ![](https://cdn.nlark.com/yuque/0/2026/png/526089/1784539098965-bc0d0fb6-aac5-44d7-87a6-dd96352f4959.png)
 
+
 ## 二. 总结：
 从零实现了**工程化 Ollama 推理网关**，解决原生 Ollama 无鉴权、无日志、无统一异常返回、无分层架构的生产痛点，所有代码可直接复用在后续 RAG 项目。  
 
@@ -499,7 +500,104 @@ FastAPI 每次请求接口前，会优先执行 Depends 内函数；校验失败
 #### Q4：全局异常处理器的执行顺序？
 请求参数校验异常（最先拦截）→ 自定义业务异常 → 通用 Exception 兜底捕获（服务器崩溃、第三方调用失败）。
 
+
 ## 四、Day1 拓展任务
-#### 新增流式对话接口 `/v1/ollama/stream_chat`，返回 SSE 流式输出
-#### 增加请求 ID 追踪，每条日志带上 request_id，方便线上链路排查
-#### 简易内存限流：基于客户端 IP 限制每秒最大请求次数
+
+### 1. 新增流式对话接口 `/v1/ollama/stream_chat`，返回 SSE 流式输出
+
+#### 需求目标：
+原 `/chat` 接口是一次性等大模型全部生成完再返回，用户等待时间长、体验差。本任务新增流式对话接口，基于 **SSE（Server-Sent Events）** 实现大模型「边生成边返回」，逐字输出，效果与 ChatGPT 打字机一致。
+
+#### 实现原理：
++ Ollama 原生 `/api/generate` 接口在 `stream=true` 时，返回 **NDJSON**（每行一个独立 JSON，以换行分隔），逐帧下发生成内容，最后一帧带 `done=true`
++ 后端用 `requests` 的 `stream=True` + `iter_lines()` 逐行读取，用生成器 `yield` 出每一帧
++ FastAPI 用 `StreamingResponse` + `media_type="text/event-stream"` 将每帧包装成 SSE 格式 `data: {...}\n\n` 持续下发给前端
+
+#### 实现步骤：
+##### 步骤 1：utils/ollama_client.py 新增流式请求方法
+在 `OllamaClient` 类中新增 `chat_stream`：
+
+```python
+import json
+...
+
+class OllamaClient:
+    ...
+
+    @staticmethod
+    def chat_stream(params: dict):
+        """流式对话：逐行 yield Ollama 返回的 NDJSON 片段"""
+        url = f"{OLLAMA_URL}/api/generate"
+        try:
+            with requests.post(
+                url, json={**params, "stream": True}, stream=True, timeout=120
+            ) as resp:
+                resp.raise_for_status()
+                for line in resp.iter_lines():
+                    if line:                       # 跳过空行
+                        yield json.loads(line)     # 每行是一个独立 JSON
+        except requests.exceptions.ConnectionError:
+            log.error("连接Ollama服务失败，请检查ollama是否启动")
+            raise BusinessException(503, "Ollama推理服务未启动或无法连接")
+        except Exception as e:
+            log.error(f"流式调用ollama异常: {str(e)}")
+            raise BusinessException(500, f"模型推理失败: {str(e)}")
+```
+
+说明：
++ `stream=True` 让 requests 不立即下载全部 body，而是建立可迭代长连接
++ `iter_lines()` 自动按行拆 NDJSON，`json.loads(line)` 把每片解析成字典（含 `response`、`done` 等字段）
++ 复用原有异常处理逻辑，连接失败抛 503，其他异常抛 500
+
+##### 步骤 2：api/ollama_router.py 新增 SSE 路由接口
+文件顶部新增导入：
+
+```python
+import json
+from fastapi.responses import StreamingResponse
+```
+
+在路由中新增 `/stream_chat` 接口：
+
+```python
+import json
+from fastapi.responses import StreamingResponse
+...
+
+@router.post("/stream_chat")
+async def stream_chat(req: ChatRequest, auth=Depends(check_auth)):
+    """流式对话推理接口（SSE 输出）"""
+    def event_gen():
+        for chunk in ollama_client.chat_stream(req.model_dump()):
+            yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
+    return StreamingResponse(event_gen(), media_type="text/event-stream")
+```
+
+说明：
++ `auth=Depends(check_auth)` 复用已有鉴权，逻辑零改动
++ `chat_stream` 内部强制 `stream=True`，不受请求体 stream 字段影响
++ `ensure_ascii=False` 保证中文不被转义；SSE 协议要求每条消息以 `\n\n` 结尾
++ `event_gen` 是同步生成器，Starlette 会自动放到线程池执行，不阻塞事件循环
+
+##### 步骤 3：启动服务 + 联调验证
++ 找到 `POST /v1/ollama/stream_chat` → Try it out，填入请求体：
+
+```plain
+{
+  "model": "qwen2.5:3b",
+  "prompt": "简单解释什么是RAG",
+  "temperature": 0.7,
+  "stream": false
+}
+```
+
++  Execute 执行，正常返回大模型回答内容：
+
+#### 任务小结：
++ 复用工具层 + 鉴权 + 异常三大已有能力，仅新增一个生成器方法 + 一个路由，充分体现分层架构的可扩展性
++ 核心区别：`/chat` 用 `resp.json()` 一次性返回，`/stream_chat` 用 `iter_lines()` 逐帧 `yield`
++ 注意点：`requests` 需加 `stream=True`，curl 测试需加 `-N`，前端需用 fetch 流式读取而非 EventSource
+
+### 2. 增加请求 ID 追踪，每条日志带上 request_id，方便线上链路排查
+
+### 3. 简易内存限流：基于客户端 IP 限制每秒最大请求次数

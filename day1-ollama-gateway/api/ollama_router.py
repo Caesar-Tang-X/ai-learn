@@ -1,6 +1,8 @@
 import os
 import requests
+import json
 from fastapi import APIRouter, Depends
+from fastapi.responses import StreamingResponse
 from schemas.request import ChatRequest
 from utils.ollama_client import ollama_client
 from core.auth import check_auth
@@ -19,6 +21,14 @@ async def ollama_chat(req: ChatRequest, auth=Depends(check_auth)):
     req_params = req.model_dump()
     result = ollama_client.chat(req_params)
     return resp_format(200, "success", data=result)
+
+@router.post("/stream_chat")
+async def stream_chat(req: ChatRequest, auth=Depends(check_auth)):
+    """流式对话推理接口（SSE 输出）"""
+    def event_gen():
+        for chunk in ollama_client.chat_stream(req.model_dump()):
+            yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
+    return StreamingResponse(event_gen(), media_type="text/event-stream")
 
 @router.get("/models")
 async def list_model(auth=Depends(check_auth)):
