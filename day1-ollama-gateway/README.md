@@ -1,11 +1,9 @@
-# FastAPI 搭建 Ollama 统一推理服务，全局异常、日志、鉴权封装
-
-
-## 一. 今日目标：
+# 一. 今日目标：
 使用 FastAPI 搭建 Ollama 统一推理网关服务，完成三大工程化封装：**全局异常捕获 + 结构化日志 + 接口鉴权**，使程序直接具备工程可用规范。  
 
-###  步骤 1：安装前置软件  
-####  1.1 安装 Python 3.11  
+# 二、准备工作
+##  步骤 1：安装前置软件  
+###  1.1 安装 Python 3.11  
 + 官网下载 Python3.11 安装包：[https://www.python.org/downloads/release/python-3110/](https://link.wtturl.cn/?target=https%3A%2F%2Fwww.python.org%2Fdownloads%2Frelease%2Fpython-3110%2F&scene=im&aid=497858&lang=zh)
 + Windows 安装勾选底部 **Add Python to PATH**，一路下一步；Mac 用官网 pkg 或 brew 安装
 + 打开终端 / CMD 验证安装：
@@ -14,7 +12,7 @@
 python --version
 ```
 
-#### 1.2 安装 Ollama
+### 1.2 安装 Ollama
 + 官网下载：[https://ollama.com/](https://link.wtturl.cn/?target=https%3A%2F%2Follama.com%2F&scene=im&aid=497858&lang=zh) 对应系统安装包
 + 安装完成后新开终端执行：
 
@@ -28,22 +26,22 @@ ollama list
 ollama pull qwen2.5:3b
 ```
 
-### 步骤 2：创建项目目录 + 虚拟环境
-#### 2.1 创建项目文件夹
+## 步骤 2：创建项目目录 + 虚拟环境
+### 2.1 创建项目文件夹
 在你方便存放代码的磁盘新建文件夹，命名 `ollama-gateway` 打开终端，cd 进入这个文件夹，示例（Windows cmd）：
 
 ```powershell
 cd F:\ai-learn\ollama-gateway
 ```
 
-#### 2.2 创建 Python 虚拟环境
+### 2.2 创建 Python 虚拟环境
 执行命令：
 
 ```powershell
 python -m venv venv
 ```
 
-#### 2.3 激活虚拟环境
+### 2.3 激活虚拟环境
 Windows CMD
 
 ```plain
@@ -64,7 +62,7 @@ source venv/bin/activate
 
 激活成功后，终端前缀会出现 `(venv)` 标识
 
-#### 2.4 批量安装依赖包
+### 2.4 批量安装依赖包
 激活环境后执行安装指令：
 
 ```plain
@@ -73,36 +71,8 @@ pip install fastapi uvicorn python-multipart pydantic python-jose passlib loguru
 
 等待全部依赖下载安装完成，无红色报错。
 
-### 步骤 3：创建项目配置文件 .env
-进入 `F:\ai-learn\ollama-gateway` 目录，新建文件，文件名严格为 `.env`（带点，无后缀） 写入下面全部内容：
-
-```plain
-# 服务配置
-SERVER_HOST=0.0.0.0
-SERVER_PORT=8000
-# 日志级别
-LOG_LEVEL=INFO
-
-# 鉴权密钥（生产务必更换长随机字符串）
-API_SECRET_KEY=supersecretkey2026airaggateway
-
-# Ollama原生地址
-OLLAMA_BASE_URL=http://localhost:11434
-```
-
-#### 3.1 创建文件夹结构
-在项目根目录依次新建这几个文件夹：
-
-+ core
-+ api
-+ schemas
-+ utils
-+ logs
-
-建好后每个文件夹内新建空文件 `__init__.py`（每个目录都要创建，标识为 Python 包）
-
-目录结构现在长这样：
-
+# 三、开发实操
+## 步骤 1：设计目录结构
 ```plain
 ollama-gateway/
 ├── .env
@@ -119,10 +89,27 @@ ollama-gateway/
 
 ```
 
-### 步骤 4：编写 core/logger.py 全局日志模块
+## 步骤 2：创建项目配置文件 .env
+进入 `F:\ai-learn\ollama-gateway` 目录，新建文件，文件名严格为 `.env`（带点，无后缀） 写入下面全部内容：
+
+```properties
+# 服务配置
+SERVER_HOST=0.0.0.0
+SERVER_PORT=8000
+# 日志级别
+LOG_LEVEL=INFO
+
+# 鉴权密钥（生产务必更换长随机字符串）
+API_SECRET_KEY=supersecretkey2026airaggateway
+
+# Ollama原生地址
+OLLAMA_BASE_URL=http://localhost:11434
+```
+
+## 步骤 3：编写 core/logger.py 全局日志模块
 在 `core` 文件夹下新建 `logger.py`，复制下方全部代码保存：
 
-```plain
+```python
 from loguru import logger
 import sys
 from dotenv import load_dotenv
@@ -160,7 +147,7 @@ log = logger
 
 ```
 
-### 步骤 5：编写 core/exceptions.py 全局异常统一处理
+## 步骤 4：编写 core/exceptions.py 全局异常统一处理
 core 目录新建 `exceptions.py`，粘贴下面代码并保存：
 
 ```python
@@ -208,10 +195,10 @@ def register_exception(app):
     app.add_exception_handler(Exception, global_exception_handler)
 ```
 
-### 步骤 6：编写 core/auth.py 接口鉴权依赖
+## 步骤 5：编写 core/auth.py 接口鉴权依赖
 core 文件夹新建 `auth.py`，复制代码保存：
 
-```plain
+```python
 from fastapi import Depends
 from fastapi.security import APIKeyHeader
 from dotenv import load_dotenv
@@ -234,10 +221,10 @@ async def check_auth(api_key: str = Depends(api_key_header)):
     return True
 ```
 
-### 步骤 7：编写 schemas/request.py 请求参数校验模型
+## 步骤 6：编写 schemas/request.py 请求参数校验模型
 schemas 文件夹新建 `request.py`，复制下方代码保存：
 
-```plain
+```python
 from pydantic import BaseModel, Field
 
 """
@@ -253,10 +240,10 @@ class ChatRequest(BaseModel):
     stream: bool = Field(False, description="是否开启流式输出")
 ```
 
-### 步骤 8：编写 utils/ollama_client.py Ollama 底层请求封装
+## 步骤 7：编写 utils/ollama_client.py Ollama 底层请求封装
 utils 文件夹新建 `ollama_client.py`，复制代码保存：
 
-```plain
+```python
 import requests
 from dotenv import load_dotenv
 import os
@@ -291,10 +278,10 @@ ollama_client = OllamaClient()
 
 ```
 
-### 步骤 9：编写 api/ollama_router.py 业务路由接口
+## 步骤 8：编写 api/ollama_router.py 业务路由接口
 api 文件夹新建 `ollama_router.py`，复制下面代码保存：
 
-```plain
+```python
 import os
 import requests
 from fastapi import APIRouter, Depends
@@ -325,10 +312,10 @@ async def list_model(auth=Depends(check_auth)):
 
 ```
 
-### 步骤 10：编写项目根目录 main.py 启动入口
+## 步骤 9：编写项目根目录 main.py 启动入口
 在 `ollama-gateway` 根目录新建 `main.py`，复制全部代码保存：
 
-```plain
+```python
 from fastapi import FastAPI
 import uvicorn
 from dotenv import load_dotenv
@@ -376,8 +363,8 @@ if __name__ == "__main__":
 
 ```
 
-### 步骤 11：启动服务 + 分模块验证功能
-#### 11.1 启动服务
+## 步骤 10：启动服务 + 分模块验证功能
+### 10.1 启动服务
 确认终端还在 `F:\ai-learn\ollama-gateway`，虚拟环境 `(venv)` 已激活，执行：
 
 ```plain
@@ -395,7 +382,7 @@ INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
 保持终端窗口不要关闭，新开浏览器访问接口文档：   
 [http://127.0.0.1:8000/docs](https://link.wtturl.cn/?target=http%3A%2F%2F127.0.0.1%3A8000%2Fdocs&scene=im&aid=497858&lang=zh)
 
-#### 11.2 第一轮测试：健康接口（验证日志模块）
+### 10.2 第一轮测试：健康接口（验证日志模块）
 + 在 docs 页面找到 `GET /health`，点击 Try it out → Execute
 + 返回内容：`{"status":"ok","service":"ollama-gateway"}`
 + 查看终端控制台，打印一条 INFO 日志；同时项目 logs 文件夹自动生成日志文件 日志模块验证通过
@@ -403,7 +390,7 @@ INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
 <!-- 这是一张图片，ocr 内容为： -->
 ![](https://cdn.nlark.com/yuque/0/2026/png/526089/1784538622888-24e2dd53-ee16-4f8c-9eba-09c707c2ed69.png)
 
-#### 11.3 第二轮测试：无鉴权访问模型接口（验证全局异常 + 鉴权）
+### 10.3 第二轮测试：无鉴权访问模型接口（验证全局异常 + 鉴权）
 + 找到 `GET /v1/ollama/models`，直接 Execute，不带 X-API-Key 请求头
 + 返回结果：`{"code":401,"msg":"非法访问，API密钥错误","data":null}`
 + 终端打印 ERROR 异常日志 鉴权、全局异常捕获验证通过
@@ -411,7 +398,7 @@ INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
 <!-- 这是一张图片，ocr 内容为： -->
 ![](https://cdn.nlark.com/yuque/0/2026/png/526089/1784538727386-726b4382-8499-4d32-b749-1c699dd20ba5.png)
 
-#### 11.4 第三轮测试：携带正确密钥正常查询模型列表
+### 10.4 第三轮测试：携带正确密钥正常查询模型列表
 + 页面右上角点击 **Authorize**
 + 弹窗填入： Key: `X-API-Key` Value: `supersecretkey2026airaggateway` 点击 Authorize 授权
 + 再次执行 `/v1/ollama/models`，返回包含 `qwen2.5:3b`、`bge-m3:latest` 的模型列表 Ollama 客户端连通性验证通过
@@ -425,7 +412,7 @@ INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
 <!-- 这是一张图片，ocr 内容为： -->
 ![](https://cdn.nlark.com/yuque/0/2026/png/526089/1784538855754-a7889750-f407-40f1-bde2-f6934d04fadd.png)
 
-#### 11.5 第四轮测试：对话推理接口
+### 10.5 第四轮测试：对话推理接口
 + 找到 `POST /v1/ollama/chat` → Try it out，填入请求体：
 
 ```plain
@@ -445,20 +432,19 @@ INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
 <!-- 这是一张图片，ocr 内容为： -->
 ![](https://cdn.nlark.com/yuque/0/2026/png/526089/1784539012160-4b3b6c42-7b35-40cb-93ae-ca19c374fe24.png)
 
-#### 11.6 模拟异常场景测试
+### 10.6 模拟异常场景测试
 + 关闭本地 Ollama 程序，再次调用 `/chat` 接口，会返回 `code:503 Ollama推理服务未启动`，同时记录错误日志
 
 <!-- 这是一张图片，ocr 内容为： -->
 ![](https://cdn.nlark.com/yuque/0/2026/png/526089/1784539098965-bc0d0fb6-aac5-44d7-87a6-dd96352f4959.png)
 
-
-## 二. 总结：
+# 四. 总结：
 从零实现了**工程化 Ollama 推理网关**，解决原生 Ollama 无鉴权、无日志、无统一异常返回、无分层架构的生产痛点，所有代码可直接复用在后续 RAG 项目。  
 
-#### 1. 技术栈
+### 1. 技术栈
 Python + FastAPI + Uvicorn + Loguru + Ollama HTTP API
 
-#### 2. 四大核心模块功能
+### 2. 四大核心模块功能
 1. **结构化日志模块 core/logger.py**
     - 替换原生 logging，彩色控制台输出
     - 日志按天自动切割文件，保留 7 天日志
@@ -476,7 +462,7 @@ Python + FastAPI + Uvicorn + Loguru + Ollama HTTP API
     - 统一捕获连接失败、超时、请求异常，向上抛业务异常
     - 单例客户端，避免重复创建请求实例
 
-####  3. 分层工程化思想  
+### 3. 分层工程化思想  
 ```plain
 配置(.env) → 核心中间件(日志/异常/鉴权) → 参数模型(schemas) → 工具类(ollama调用) → 路由接口 → 程序入口
 ```
@@ -485,26 +471,23 @@ Python + FastAPI + Uvicorn + Loguru + Ollama HTTP API
 + 可扩展：后续向量库、RAG、Agent 接口直接新增路由即可，不改动原有逻辑
 + 规范：统一返回体、统一日志、统一鉴权，企业私有化项目标准写法
 
-## 三、关键知识点理解复盘
-#### Q1：为什么不能直接 `from loguru import log`？
+# 三、关键知识点理解复盘
+### Q1：为什么不能直接 `from loguru import log`？
 loguru 内置变量叫 `logger`，`log` 是我们在 logger.py 自定义导出的全局对象，其他文件必须从 core.logger 导入，否则报导入错误。
 
-#### Q2：APIKey 鉴权依赖 `Depends(check_auth)` 的执行逻辑？
+### Q2：APIKey 鉴权依赖 `Depends(check_auth)` 的执行逻辑？
 FastAPI 每次请求接口前，会优先执行 Depends 内函数；校验失败直接抛出 401 业务异常，被全局异常处理器捕获返回统一报错，接口函数不会执行。
 
-#### Q3：Ollama `ollama pull` / `ollama run` / HTTP 接口三者区别？
+### Q3：Ollama `ollama pull` / `ollama run` / HTTP 接口三者区别？
 1. pull：仅下载模型文件到本地缓存
 2. run：终端交互式命令行对话，开发调试用
 3. 11434 HTTP 服务：后台常驻，代码程序调用专用，无需手动启动会话
 
-#### Q4：全局异常处理器的执行顺序？
+### Q4：全局异常处理器的执行顺序？
 请求参数校验异常（最先拦截）→ 自定义业务异常 → 通用 Exception 兜底捕获（服务器崩溃、第三方调用失败）。
 
-
-## 四、Day1 拓展任务
-
+# 五、Day1 拓展任务
 ### 1. 新增流式对话接口 `/v1/ollama/stream_chat`，返回 SSE 流式输出
-
 #### 需求目标：
 原 `/chat` 接口是一次性等大模型全部生成完再返回，用户等待时间长、体验差。本任务新增流式对话接口，基于 **SSE（Server-Sent Events）** 实现大模型「边生成边返回」，逐字输出，效果与 ChatGPT 打字机一致。
 
@@ -545,6 +528,7 @@ class OllamaClient:
 ```
 
 说明：
+
 + `stream=True` 让 requests 不立即下载全部 body，而是建立可迭代长连接
 + `iter_lines()` 自动按行拆 NDJSON，`json.loads(line)` 把每片解析成字典（含 `response`、`done` 等字段）
 + 复用原有异常处理逻辑，连接失败抛 503，其他异常抛 500
@@ -574,6 +558,7 @@ async def stream_chat(req: ChatRequest, auth=Depends(check_auth)):
 ```
 
 说明：
+
 + `auth=Depends(check_auth)` 复用已有鉴权，逻辑零改动
 + `chat_stream` 内部强制 `stream=True`，不受请求体 stream 字段影响
 + `ensure_ascii=False` 保证中文不被转义；SSE 协议要求每条消息以 `\n\n` 结尾
@@ -601,6 +586,3 @@ async def stream_chat(req: ChatRequest, auth=Depends(check_auth)):
 + 核心区别：`/chat` 用 `resp.json()` 一次性返回，`/stream_chat` 用 `iter_lines()` 逐帧 `yield`
 + 注意点：`requests` 需加 `stream=True`，curl 测试需加 `-N`，前端需用 fetch 流式读取而非 EventSource
 
-### 2. 增加请求 ID 追踪，每条日志带上 request_id，方便线上链路排查
-
-### 3. 简易内存限流：基于客户端 IP 限制每秒最大请求次数
