@@ -1,4 +1,6 @@
-## 第一阶段 Day1-Day12 手写 RAG&LangChain
+## AI 学习计划
+
+### 第一阶段 Day1-Day12 手写 RAG&LangChain
 
 - Day1：FastAPI 搭建 Ollama 统一推理服务，全局异常、日志、鉴权封装
 - Day2：PDF/Word/Markdown 读取、文本清洗、分层分块实操
@@ -13,7 +15,7 @@
 - Day11：Ollama 量化调优、多模型并发、显存优化脚本编写
 - Day12：综合项目：完整私有 RAG 系统
 
-## 第二阶段 Day13-Day22 Dify 二次开发 + 私有化工程交付
+### 第二阶段 Day13-Day22 Dify 二次开发 + 私有化工程交付
 
 - Day13：拉取 Dify 源码本地启动，梳理前后端分层架构
 - Day14：开发 Dify 自定义业务插件，对接自有数据库
