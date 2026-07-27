@@ -245,7 +245,7 @@ def answer_question(store: ChromaStore, question: str, n_results: int = 3):
 #### 3.2 练习要点
 + `build_qa_prompt` 是 RAG 的灵魂：强制"仅根据资料回答，没有就说未提及"——这是 RAG **抑制幻觉**的核心，模型不会凭空编。
 + 引用来源从 `metadatas` 取 `source + chunk_id`，回答后附上，证明答案有据可查。
-+ 需先 `ollama pull qwen2.5:latest`（或你的对话模型），否则 `/api/generate` 报 404。
++ 需先 `ollama pull qwen2.5:3b`（或你的对话模型），否则 `/api/generate` 报 404。
 
 ## 步骤 4：补 Day2 遗留债——剥离 Markdown 代码围栏
 `cleaners/text_cleaner.py` 增加 `_remove_code_fences`，去掉 ```` ```lang ... ``` ```` 噪声，避免源码/语言标记词污染 chunk、干扰 Embedding。
