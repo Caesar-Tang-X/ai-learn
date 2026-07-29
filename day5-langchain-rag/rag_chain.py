@@ -1,3 +1,9 @@
+"""
+author: tang
+description: Day5 —— 用 LangChain 标准组件组装 RAG 链路
+             步骤3：文档 → 分块(LangChain) → 向量(OllamaEmbeddings) → Chroma → retriever
+"""
+
 from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_chroma import Chroma

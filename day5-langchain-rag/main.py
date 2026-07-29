@@ -72,7 +72,7 @@ def lcel_rag(question: str, retriever, llm):
 def main():
     file_path = "samples/README.md"
     retriever = build_retriever(file_path, k=3)
-    llm = OllamaLLM()   # 默认 model=qwen2.5:latest，改成你实际 pull 的对话模型名
+    llm = OllamaLLM()   # 默认 model=qwen2.5:3b，改成你实际 pull 的对话模型名
     question = "如何安装依赖"
     print("\n\n########## 下面是 RAG 链手写版 ##########\n")
     handwritten_rag(question, retriever, llm)
