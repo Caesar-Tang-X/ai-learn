@@ -1,14 +1,6 @@
-# Day9：LangChain Agent + 自定义工具（查库 / 调用接口）
+# 一. 今日目标
 
-> 学习定位：Day8 我们学会了「写好 Prompt 让模型更聪明」；Day9 要让模型「能动手」——
-> 把外部能力（查库、调接口）封装成工具，让 Agent 自主决定何时调用，自动完成多步任务。
-
----
-
-## 一、今日目标
-
-根据根目录 README 大纲，Day9 目标：**用 LangChain 构建一个 Agent，自动调度我们自定义的
-多个工具（查知识库、调外部/本地接口），而不是把问答流程写死。**
+Day8 我们学会了「写好 Prompt 让模型更聪明」；Day9 要让模型「能动手」—— 把外部能力（查库、调接口）封装成工具，让 Agent 自主决定何时调用，自动完成多步任务。Day9 目标：**用 LangChain 构建一个 Agent，自动调度我们自定义的多个工具（查知识库、调外部/本地接口），而不是把问答流程写死。**
 
 具体要掌握：
 
@@ -16,44 +8,35 @@
 2. Agent 的两种调度范式：**文本 ReAct**（手写循环解析）与 **原生 tool calling**（模型返回结构化调用）。
 3. 同一套工具，如何无缝切换到「本地 Ollama」与「云端大模型」两种后端。
 
-> 今日三个工具：`search_kb`（查 PGVector 知识库）、`call_api`（GET 外部接口）、
-> `local_status`（查本地 FastAPI 服务）。
+> 今日三个工具：`search_kb`（查 PGVector 知识库）、`call_api`（GET 外部接口）、`local_status`（查本地 FastAPI 服务）。
 
----
+# 二、先想清楚几个问题
 
-## 二、先想清楚几个问题
+#### Q1：普通的 RAG 问答链和 Agent 有什么区别？
 
-**Q1：普通的 RAG 问答链和 Agent 有什么区别？**
-A：普通问答链流程是写死的——问知识库→检索→拼提示→回答，它**不能**主动去查本地服务状态、
-调外部接口再综合。Agent 的区别是：让模型自己决定「调哪个工具、按什么顺序、调几次」，流程由模型编排。
+A：普通问答链流程是写死的——问知识库→检索→拼提示→回答，它**不能**主动去查本地服务状态、调外部接口再综合。Agent 的区别是：让模型自己决定「调哪个工具、按什么顺序、调几次」，流程由模型编排。
 
-**Q2：工具（Tool）到底是什么？**
-A：工具就是「带描述的函数」。用 `@tool` 装饰后，函数变成 `StructuredTool` 对象：模型能看到它的
-名字、描述、参数 schema，并决定何时调用。关键思想——**工具只写一次（纯函数），Agent 只负责
-「何时调、调哪个、拿结果后怎么串」，这就是「能力」与「调度」解耦**。换模型/换后端时工具零改动。
+#### Q2：工具（Tool）到底是什么？
 
-**Q3：模型怎么「调用」一个函数？它真会执行 Python 吗？**
-A：不会。模型只生成「我要调谁、参数是什么」的文本（文本 ReAct）或结构化 `tool_calls`（原生
-tool calling）。**真正执行函数的是我们写的循环代码**，再把执行结果喂回给模型。模型是被「指挥」的，
-执行器在我们手里。
+A：工具就是「带描述的函数」。用 `@tool` 装饰后，函数变成 `StructuredTool` 对象：模型能看到它的名字、描述、参数 schema，并决定何时调用。关键思想——**工具只写一次（纯函数），Agent 只负责「何时调、调哪个、拿结果后怎么串」，这就是「能力」与「调度」解耦**。换模型/换后端时工具零改动。
 
-**Q4：文本 ReAct 和原生 tool calling 怎么选？**
-A：文本 ReAct 让模型在文本里写 `Action: xxx`，我们正则解析后执行，不依赖模型的 tool calling
-微调质量，但解析脆弱。原生 tool calling 模型直接返回结构化的函数名+参数 JSON，我们执行后用
-`ToolMessage` 回填，结构化、几乎不瞎编，但依赖模型本身支持 function calling。
+#### Q3：模型怎么「调用」一个函数？它真会执行 Python 吗？
 
-**Q5：本地模型（qwen2.5:3b）到底能不能调工具？**
-A：**能。** 这是 Day9 最大的误区澄清——之前误以为「本地模型不能调工具」，实际是因为 LangChain 高层
-工厂（`create_agent`/`create_react_agent`）在本环境**不会把 tools 绑进请求**。只要改用
-`llm.bind_tools([...])` 手工绑定 + 标准消息循环，qwen2.5:3b/7b 都能原生 tool calling（下文步骤6/7 实测验证）。
+A：不会。模型只生成「我要调谁、参数是什么」的文本（文本 ReAct）或结构化 `tool_calls`（原生 tool calling）。**真正执行函数的是我们写的循环代码**，再把执行结果喂回给模型。模型是被「指挥」的，执行器在我们手里。
 
----
+#### Q4：文本 ReAct 和原生 tool calling 怎么选？
 
-## 三、准备工作
+A：文本 ReAct 让模型在文本里写 `Action: xxx`，我们正则解析后执行，不依赖模型的 tool calling 微调质量，但解析脆弱。原生 tool calling 模型直接返回结构化的函数名+参数 JSON，我们执行后用 `ToolMessage` 回填，结构化、几乎不瞎编，但依赖模型本身支持 function calling。
 
-### 步骤1：建立目录与文件骨架
+#### Q5：本地模型（qwen2.5:3b）到底能不能调工具？
 
-```
+A：**能。** 这是 Day9 最大的误区澄清——之前误以为「本地模型不能调工具」，实际是因为 LangChain 高层工厂（`create_agent`/`create_react_agent`）在本环境**不会把 tools 绑进请求**。只要改用 `llm.bind_tools([...])` 手工绑定 + 标准消息循环，qwen2.5:3b/7b 都能原生 tool calling（下文步骤6/7 实测验证）。
+
+# 三、准备工作
+
+## 步骤 1：建立目录与文件骨架
+
+```plaintext
 day9-agent-tools/
 ├── samples/
 │   └── all_days.md              # Day1~Day8 笔记整合（21条），作为知识库源
@@ -74,15 +57,15 @@ day9-agent-tools/
 └── requirements.txt
 ```
 
-### 步骤2：安装依赖（`requirements.txt`）
+## 步骤 2：安装依赖（requirements.txt）
 
-```powershell
+```text
 python -m venv venv
 .\venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-### 步骤3：知识库样本与环境变量
+## 步骤 3：知识库样本与环境变量
 
 - `samples/all_days.md`：基于 Day1~Day8 真实 README 整理成 21 条段落。
 - 复用 Day7 的 `core/rag_chain.py` 的 `build_vectorstore()` 写入 PGVector 的 `docs_all_days` collection。
@@ -92,11 +75,9 @@ pip install -r requirements.txt
   - `PG_CONNECTION=postgresql+psycopg://rag:rag123@localhost:5432/ragdb`（Day7 约定）
   - `DASHSCOPE_API_KEY=...`（**仅方案2 通义需要**）
 
----
+# 四、开发实操
 
-## 四、开发实操
-
-### 步骤4：封装第一个工具 —— 查知识库 `search_kb`
+## 步骤 4：封装第一个工具 —— 查知识库 `search_kb`
 
 文件：`tools/kb_tool.py`（完整内容）
 
@@ -155,7 +136,7 @@ if __name__ == "__main__":
     print(search_kb.invoke("Day7 做了什么？PGVector 怎么用？"))
 ```
 
-**4.1 运行结果（自检）**
+#### 4.1 运行结果（自检）
 
 ```text
 [复用] collection 'docs_all_days' 已有数据
@@ -164,15 +145,13 @@ AI 学习计划 Day1~Day8 学习知识库……
 （后续为 Day7 相关片段）
 ```
 
-**4.2 解读**
+#### 4.2 解读
+
 - `@tool` 装饰器把普通函数变成 `StructuredTool`，模型之后能看到它的名字、描述和参数 schema。
-- 用「复用」而非「强制重建」：`_get_kb()` 带模块级缓存，且 `build_vectorstore` 内部发现
-  collection 已有数据就直接返回。这样 Agent 多轮调用不必反复清库灌库。
+- 用「复用」而非「强制重建」：`_get_kb()` 带模块级缓存，且 `build_vectorstore` 内部发现 collection 已有数据就直接返回。这样 Agent 多轮调用不必反复清库灌库。
 - `docstring` 就是给模型的「工具说明书」，写得越清楚，模型越会用对。
 
----
-
-### 步骤5：封装外部接口工具 `call_api` 与本地服务工具 `local_status`
+## 步骤 5：封装外部接口工具 `call_api` 与本地服务工具 `local_status`
 
 文件：`tools/api_tool.py`（完整内容）
 
@@ -259,13 +238,16 @@ if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
 ```
 
-**5.1 运行结果（自检）**
+#### 5.1 运行结果（自检）
 
 先启动本地服务（另一个终端）：
+
 ```bash
 python local_server.py
 ```
+
 然后对两个工具分别自检：
+
 ```text
 # call_api 自检
 [接口 200] https://jsonplaceholder.typicode.com/posts/1
@@ -275,14 +257,13 @@ python local_server.py
 [本地服务] {"service":"day9-local-demo","online":true,"task_count":3,"message":"本地服务运行正常"}
 ```
 
-**5.2 解读**
+#### 5.2 解读
+
 - 三个工具至此齐备，且都能独立工作。
 - `local_status` 无参数，是验证「模型能否正确处理无参工具」的好用例。
 - Agent 运行前必须先在另一个终端 `python local_server.py` 启动本地服务，否则 `local_status` 会返回「本地服务未启动」错误说明（工具已做异常兜底，不会崩溃）。
 
----
-
-### 步骤6：方案1 —— 手写文本 ReAct（本地 qwen2.5:3b）
+## 步骤 6：方案1 —— 手写文本 ReAct（本地 qwen2.5:3b）
 
 文件：`agent_runner.py`（完整内容）
 
@@ -391,14 +372,14 @@ def build_chat_model(model: str = "qwen2.5:3b",
                      temperature=temperature, stream=False)
 ```
 
-**6.1 运行**
+#### 6.1 运行
 
 ```bash
 python local_server.py   # 另一个终端先启动
 python agent_runner.py
 ```
 
-**6.2 运行结果（qwen2.5:3b）**
+#### 6.2 运行结果（qwen2.5:3b）
 
 ```text
 --- 第1步 模型输出 ---
@@ -422,18 +403,14 @@ Final Answer: 项目 Day7 学习了 PostgreSQL + PGVector 生产向量库，目�
 项目 Day7 学习了 PostgreSQL + PGVector 生产向量库……本地服务目前在线并且运行正常。
 ```
 
-**6.3 解读与踩坑**
-- **强制「单 Action」**：系统提示硬性约束一次只输出一个 Action。否则 qwen2.5 会一次性把
-  所有 Action 都写出来，解析困难、浪费步数。
-- **贪婪正则吞参**：早期正则 `(.*)` 会吃到文末，把下一个 `Thought`/`Action` 也吞进参数。
-  修复为加前瞻断言 `(?=\n(Thought|Action|Final Answer):|$)`，在下一个标签处截断。
-- **`stream=False`**：`ChatOllama` 在「tools + 流式」组合下返回空响应（langchain-ollama
-  已知问题），关掉流才正常。
+#### 6.3 解读与踩坑
+
+- **强制「单 Action」**：系统提示硬性约束一次只输出一个 Action。否则 qwen2.5 会一次性把多个 Action 都写出来，解析困难、浪费步数。
+- **贪婪正则吞参**：早期正则 `(.*)` 会吃到文末，把下一个 `Thought`/`Action` 也吞进参数。修复为加前瞻断言 `(?=\n(Thought|Action|Final Answer):|$)`，在下一个标签处截断。
+- **`stream=False`**：`ChatOllama` 在「tools + 流式」组合下返回空响应（langchain-ollama 已知问题），关掉流才正常。
 - `MAX_STEPS = 6` 防止模型死循环。
 
----
-
-### 步骤7：方案3 —— 本地 Ollama 原生 tool calling（与方案1 共用工具）
+## 步骤 7：方案3 —— 本地 Ollama 原生 tool calling（与方案2 同构，仅换后端）
 
 文件：`agent_runner_local.py`（完整内容）
 
@@ -505,14 +482,14 @@ if __name__ == "__main__":
         print(answer.encode("gbk", errors="replace").decode("gbk"))
 ```
 
-**7.1 运行**
+#### 7.1 运行
 
 ```bash
 python local_server.py
 python agent_runner_local.py
 ```
 
-**7.2 运行结果（qwen2.5:3b）**
+#### 7.2 运行结果（qwen2.5:3b）
 
 ```text
 === 最终答案 ===
@@ -528,7 +505,7 @@ Day7：PostgreSQL + PGVector 生产向量库……
 本地服务目前在线，运行状态正常。
 ```
 
-**7.3 关键验证（破除「本地模型不能调工具」误区）**
+#### 7.3 关键验证（破除「本地模型不能调工具」误区）
 
 为确认本地模型到底能不能调工具，对 3b 和 7b 各跑 5 次同一问题，统计成功率：
 
@@ -537,13 +514,9 @@ Day7：PostgreSQL + PGVector 生产向量库……
 | qwen2.5:3b | 5/5 | 5/5 | ≈5.5s/次 |
 | qwen2.5:7b | 5/5 | 5/5 | ≈34s/次 |
 
-**结论**：3b 与 7b 在「触发工具」上无差别（均 100%）。所谓「本地模型不能调工具」是误判，
-真凶是「高层框架工厂没把 tools 绑进请求」。只要 `bind_tools` 手工绑定，本地模型原生 tool calling
-完全可用。3b 速度约为 7b 的 6 倍，简单任务首选 3b。
+**结论**：3b 与 7b 在「触发工具」上无差别（均 100%）。所谓「本地模型不能调工具」是误判，真凶是「高层框架工厂没把 tools 绑进请求」。只要 `bind_tools` 手工绑定，本地模型原生 tool calling 完全可用。3b 速度约为 7b 的 6 倍，简单任务首选 3b。
 
----
-
-### 步骤8：方案2 —— 通义千问原生 tool calling（云端）
+## 步骤 8：方案2 —— 通义千问原生 tool calling（云端）
 
 文件：`core/adapters/tongyi_chat.py`（完整内容）
 
@@ -639,14 +612,14 @@ if __name__ == "__main__":
         print(answer.encode("gbk", errors="replace").decode("gbk"))
 ```
 
-**8.1 运行**
+#### 8.1 运行
 
 ```bash
 python local_server.py
 python agent_runner_tongyi.py   # 需 .env 配置 DASHSCOPE_API_KEY
 ```
 
-**8.2 运行结果**
+#### 8.2 运行结果
 
 ```text
 === 最终答案 ===
@@ -667,32 +640,53 @@ AI 学习计划 Day1~Day8 学习知识库……
 - 状态：✅ 在线运行
 ```
 
-**8.3 解读与踩坑**
-- **通义走 OpenAI 兼容端点**：`ChatTongyi` 直连报 `url error(400)`，改用 `langchain-openai`
-  的 `ChatOpenAI` 指向 `https://dashscope.aliyuncs.com/compatible-mode/v1`。
+#### 8.3 解读与踩坑
+
+- **通义走 OpenAI 兼容端点**：`ChatTongyi` 直连报 `url error(400)`，改用 `langchain-openai` 的 `ChatOpenAI` 指向 `https://dashscope.aliyuncs.com/compatible-mode/v1`。
 - **手工 `bind_tools`**：高层 `create_agent` 在本环境不把工具绑进去；手动 `bind_tools` 才生效。
-- **GBK 兜底**：Windows 控制台为 GBK，通义答案含 emoji（📚✅）会 `UnicodeEncodeError`，
-  打印处加 `errors="replace"` 兜底（不影响 Agent 逻辑）。
+- **GBK 兜底**：Windows 控制台为 GBK，通义答案含 emoji（📚✅）会 `UnicodeEncodeError`，打印处加 `errors="replace"` 兜底（不影响 Agent 逻辑）。
 
----
+# 五、总结
 
-## 五、总结
+## 1. 技术栈
 
-### 1. 做出了什么
-- 三个可复用的自定义工具：`search_kb` / `call_api` / `local_status`（均带 `__main__` 自检）。
-- 同一套工具，跑了三套 Agent 调度方案，全部验证通过：
-  - 方案1 本地 3b 文本 ReAct（手写循环 + 正则解析）
-  - 方案2 通义云端原生 tool calling（手工 `bind_tools` + `ToolMessage` 回填）
-  - 方案3 本地 3b/7b 原生 tool calling（与方案2 同构，仅换后端）
+Python + langchain + langchain-ollama + langchain-openai + Ollama(qwen2.5:3b) / 通义(qwen3.7-plus) + 复用 Day7 的 PGVector。
 
-### 2. 核心收获
+## 2. 核心模块
 
-> **工具写一次，调度随便换。** 把「能力」和「调度」解耦，换模型/换后端时工具零改动。
+| # | 模块 | 职责 |
+|---|------|------|
+| 1 | `tools/kb_tool.py` | 查库工具 `search_kb`（@tool 封装） |
+| 2 | `tools/api_tool.py` | 外部接口工具 `call_api` |
+| 3 | `tools/local_api_tool.py` | 本地服务工具 `local_status` |
+| 4 | `local_server.py` | 本地 FastAPI 演示服务 |
+| 5 | `core/adapters/ollama_chat.py` | 本地 ChatOllama 封装（bind_tools） |
+| 6 | `core/adapters/tongyi_chat.py` | 通义 OpenAI 兼容端点封装 |
+| 7 | `agent_runner.py` | 方案1 文本 ReAct（3b） |
+| 8 | `agent_runner_local.py` | 方案3 本地原生 tool calling（3b/7b） |
+| 9 | `agent_runner_tongyi.py` | 方案2 通义原生 tool calling |
 
-工具调用成败的关键不是「模型行不行」，而是「有没有正确 `bind_tools`」。高层框架工厂在本环境
-不可靠，手写 `bind_tools` + 标准消息循环最稳。
+## 3. Agent 调度思想（Day9 版）
 
-### 3. 三种方案怎么选
+```plaintext
+用户问题
+   ↓
+run_agent(question)
+   ↓
+┌──────────────┬──────────────────────┐
+方案1 文本ReAct    方案2/3 原生tool calling
+（正则解析Action）  （模型返回 tool_calls）
+   ↓                    ↓
+执行 TOOLS[名称]    执行 TOOLS[名称]
+   ↓                    ↓
+Observation ──→ 回填 ToolMessage
+   ↓                    ↓
+继续 / Final Answer   继续 / Final Answer
+   ↓
+最终答案
+```
+
+## 4. 三种方案怎么选
 
 | 场景 | 推荐方案 |
 |------|---------|
@@ -700,31 +694,29 @@ AI 学习计划 Day1~Day8 学习知识库……
 | 零本地算力、追求省心稳定 | 方案2（通义云端） |
 | 模型 tool calling 不可用时的兜底 | 方案1（文本 ReAct） |
 
----
+# 六、关键知识点理解复盘
 
-## 六、关键知识点复盘
+#### Q1：@tool 装饰器做了什么？
 
-**Q1：@tool 装饰器做了什么？**
 A：把函数变成带「名字+描述+参数 schema」的 `StructuredTool`，让模型能看见并正确调用。docstring 即说明书。
 
-**Q2：原生 tool calling 的闭环是怎样的？**
-A：`llm.bind_tools([...])` → 模型返回 `resp.tool_calls`（含 name/args/id）→ 我们执行函数 →
-用 `ToolMessage(content=结果, tool_call_id=id)` 回填 → 模型拿到结果后综合作答或继续调工具。
+#### Q2：原生 tool calling 的闭环是怎样的？
 
-**Q3：为什么 ToolMessage 必须带 tool_call_id？**
-A：模型发出的每个 tool_call 有唯一 id，回填的 `ToolMessage` 用相同 id 与之对应，模型才能把
-「这次执行结果」匹配到「那次调用请求」。
+A：`llm.bind_tools([...])` → 模型返回 `resp.tool_calls`（含 name/args/id）→ 我们执行函数 → 用 `ToolMessage(content=结果, tool_call_id=id)` 回填 → 模型拿到结果后综合作答或继续调工具。
 
-**Q4：文本 ReAct 为什么要用前瞻正则截断 Action Input？**
-A：模型可能在一个 Action 后继续写 `Thought`，贪婪 `(.*)` 会把后续文本全吞进参数，导致工具收到
-错误参数。加 `(?=\n(Thought|Action|Final Answer):|$)` 前瞻，在下一个标签处截断。
+#### Q3：为什么 ToolMessage 必须带 tool_call_id？
 
-**Q5：本地模型到底能不能调工具？**
+A：模型发出的每个 tool_call 有唯一 id，回填的 `ToolMessage` 用相同 id 与之对应，模型才能把「这次执行结果」匹配到「那次调用请求」。
+
+#### Q4：文本 ReAct 为什么要用前瞻正则截断 Action Input？
+
+A：模型可能在一个 Action 后继续写 `Thought`，贪婪 `(.*)` 会把后续文本全吞进参数，导致工具收到错误参数。加 `(?=\n(Thought|Action|Final Answer):|$)` 前瞻，在下一个标签处截断。
+
+#### Q5：本地模型到底能不能调工具？
+
 A：能。失败是因为高层工厂没绑 tools，不是模型能力问题。3b/7b 实测各 5 次成功率均 100%。
 
----
-
-## 七、踩坑记录（表格）
+# 七、踩坑记录（表格）
 
 | # | 现象 | 原因 | 解决 |
 |---|------|------|------|
@@ -738,21 +730,23 @@ A：能。失败是因为高层工厂没绑 tools，不是模型能力问题。3
 | 8 | Windows GBK 打印 emoji 崩溃 | 控制台编码 | 打印处 `errors="replace"` 兜底 |
 | 9 | `ChatOllama` + 流式返回空 | langchain-ollama 已知问题 | `stream=False` |
 
----
+# 八、回顾：从 Day1 到 Day9 的技术演进
 
-## 八、回顾技术演进（Day1→Day9）
-
-- Day1~Day3：模型网关、文档加载、Embedding（地基）
-- Day4~Day5：向量库存储、LangChain RAG 链（能问答）
-- Day6~Day7：混合检索、PGVector 生产化（检索更强更稳）
-- Day8：Prompt 工程（让模型更聪明）
-- **Day9：Agent + 自定义工具（让模型能动手，自主编排多步任务）**
+```plaintext
+Day1: Ollama 网关 → 调用本地 LLM
+Day2: 文档加载 → PDF/Word/MD → 纯文本
+Day3: Embedding → bge-m3 → 文本转向量
+Day4: Chroma → 向量存储 + 相似度检索
+Day5: LangChain RAG → 标准问答链（检索 + 生成）
+Day6: 混合检索 → MMR + BM25 + RRF + Rerank
+Day7: PGVector 生产化 → 存储层升级 + 元数据过滤 + Self-Query + HyDE
+Day8: Prompt Engineering → CoT + Few-Shot + JSON + 策略封装
+Day9: Agent + 自定义工具 → 模型能「动手」，自主编排多步任务
+```
 
 Day9 是「从问答到行动」的关键一跃：模型不再只是回答问题，而是能调用你的代码、查你的库、连你的服务。
 
----
-
-## 运行方式汇总
+# 运行方式
 
 ```bash
 # 0. 准备：启动本地服务（另一个终端，三个方案都需要）
