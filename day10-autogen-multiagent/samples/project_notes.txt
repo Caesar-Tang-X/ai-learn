@@ -1,0 +1,10 @@
+Day1：FastAPI 搭建 Ollama 统一推理服务，封装全局异常、日志、鉴权。
+Day2：PDF/Word/Markdown 读取、文本清洗、分层分块。
+Day3：本地 Embedding 模型 bge-m3 部署，向量与余弦相似度原理。
+Day4：Chroma 向量库增删改查，简易问答 Demo。
+Day5：LangChain 最简 RAG，弄懂 RetrievalQA 链路。
+Day6：MMR 检索、关键词+语义混合检索、Rerank 重排。
+Day7：PostgreSQL + PGVector 搭建生产向量库，替换 Chroma，解决并发、元数据过滤、持久化可靠性。
+Day8：CoT、Few-Shot、结构化 JSON 输出，封装 Prompt 模板类。
+Day9：LangChain Agent 自定义工具（查库/调接口），本地 qwen2.5:3b 原生 tool calling。
+Day10：AutoGen 多智能体基础，任务拆分与角色协同。

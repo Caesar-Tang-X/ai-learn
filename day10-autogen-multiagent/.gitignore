@@ -1,0 +1,29 @@
+# Python虚拟环境
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+env/
+ENV/
+
+# 日志文件
+logs/
+*.log
+
+# 本地配置（禁止上传真实密钥）
+.env
+
+# 系统文件
+.DS_Store
+Thumbs.db
+
+# IDE缓存
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# 运行时生成的文件
+chroma_db/
