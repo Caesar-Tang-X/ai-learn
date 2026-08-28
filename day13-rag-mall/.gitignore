@@ -1,0 +1,18 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# 虚拟环境（本目录下的 venv / vnev 等都忽略）
+venv/
+vnev/
+.venv/
+env/
+
+# 环境变量与本地配置
+.env
+
+# 日志与临时文件
+*.log
+.DS_Store
